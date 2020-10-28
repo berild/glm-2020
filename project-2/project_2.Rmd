@@ -1,0 +1,208 @@
+---
+author: $\overset{\mathrm{martin.o.berild@ntnu.no}}{10014}$ \and
+        $\overset{\mathrm{yaolin.ge@ntnu.no}}{10026}$
+date: \today
+title: "Project 2 - TMA4315"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+defaultW <- getOption("warn") 
+
+options(warn = -1) 
+```
+
+Initially, we load the \textsc{R}-package `VGAM` to fit \textit{Vector Generalized Linear and Addtive Models}, and `ggplot` as our plotting tool of choice. 
+```{r packages,message=FALSE}
+library(VGAM)
+library(ggplot2)
+```
+
+In this project, we will use multinomial regression on a dataset containing marital status, etnicity and age of individuals in New Zealand. The data is loaded in the code below, and the print display seven individuals. 
+```{r data}
+attach(marital.nz)
+head(marital.nz)
+```
+There are a total of four catagories for marital status `mstatus` and we will try to predict the probabilty of each based on the age. A multinomial regression model with a linear effect of `age` is fit to the data as
+```{r fitvglm}
+ mod1 <- vglm(mstatus ~ age, multinomial)
+ summary(mod1)
+```
+The `mstatus` is a categorical nominal response $Y \in \{1,2,3,4\}$ modelled with the linear effect of a numerical covariate `age`. Given a catoregory $r$ of the response, the probability of the subject having the $r$th `mstatus` is given by
+$$
+\pi_r = P(Y=r), \enspace r = 1,2,3,4.
+$$
+The response is usually reformulated to a vector $\boldsymbol{y}$ of $c=3$ dummy variables:
+$$
+y_r = \begin{cases}
+  1, \enspace Y = r \\
+  0, \enspace\mathrm{otherwise}
+\end{cases} \enspace\enspace r = 1,2,3.
+$$
+where the 4th category is a \textit{refrence} category, i.e. $y_{4} = 1-y_1-y_2-y_3$. The multinomial distribution for $m$ independent trials is given by 
+$$ 
+\begin{aligned}
+f(\boldsymbol{y}|\boldsymbol{\pi}) &= \frac{m!}{y_1!\cdot y_2!\cdot y_3!\cdot (1-y_1-y_2-y_3)!} \pi_1^{y_1}\cdot\pi_2^{y_2}\cdot\pi_3^{y_3}\cdot(1-\pi_1-\pi_2-\pi_3)^{1-y_1-y_2-y_3}\\
+ & = \mathcal{M}(m,\boldsymbol{\pi}),
+\end{aligned}
+$$
+where $\mathcal{M}(m,\boldsymbol{\beta})$ is the multinomial probability mass function with $m$ trials and probabilities $\boldsymbol{\pi} = (\pi_1,\pi_2,\pi_3)$. Using the linear predictor $\eta_{i,r} = \boldsymbol{x}_i^T\boldsymbol{\beta}_r$ and considering the logit model we have the probabilities:
+\begin{equation}
+ \pi_{i,r} = \frac{\exp(\boldsymbol{x}_i^T\boldsymbol{\beta}_r)}{\sum_{s=1}^{c+1} \exp(\boldsymbol{x}_i^T \boldsymbol{\beta}_s)}.
+ \label{eq:prob1}
+\end{equation}
+However, this model is non-identifiable as adding a constant to the linear predictor would yield the same probabilities. Therefore as mentioned previously, one of the categories is used as *reference* category s.t. $\boldsymbol{\beta}_r = \boldsymbol{\beta}_r - \boldsymbol{\beta}_{c+1}$, where $c+1 = 4$ in this model. The resulting probabilities are found by 
+\begin{equation}
+ \pi_{i,r} = \frac{1}{1+ \sum_{s=1}^{c} \exp(\boldsymbol{x}_i^T \boldsymbol{\beta}_s)}
+ \begin{cases}
+  \exp(\boldsymbol{x}_i^T\boldsymbol{\beta}_r), \enspace r = 1,2,\dots,c \\ 
+  1, \enspace \mathrm{otherwise}
+ \end{cases}.
+ \label{eq:prob2}
+\end{equation}
+An alternative representation is the logarithmic odds or relative risk between category $r$ and the reference category $c+1$ as
+\begin{equation}
+\log\frac{\pi_{i,r}}{\pi_{i,c+1}} = \boldsymbol{x}^T_i \boldsymbol{\beta}_r.
+\label{eq:odds}
+\end{equation}
+This logarithmic odds is also the output of a `predict()` call using the model object `mod1`, and is presented in the `Pearson residuals` in the `summary()` ouput above. Note that with this representation the a prositive effect $\beta_r$ only implies that the odds of category $r$ increase relative the reference category, and not that the probability of $r$ increase by itself. 
+
+In general, the interpretation odd ratio is the magnitude of change in the odds between two categories $r_1$ and $r_2$ for a individual $i$ by a unit change in the $j$th element of the covariate, $x_{i,j}$, as
+$$
+\boldsymbol{x}_i^* = \boldsymbol{x}_i + (0,\dots,1,\dots,0)^T,
+$$
+gives the odds ratio:
+$$
+\frac{\pi_{i,r_1}^*/\pi_{i,r_2}^*}{\pi_{i,r_1}/\pi_{i,r_2}} = \frac{\exp[\boldsymbol{x}_i^{*T}(\boldsymbol{\beta}_{r_1} - \boldsymbol{\beta}_{r_2})]}{\exp[\boldsymbol{x}_i^{T}(\boldsymbol{\beta}_{r_1} - \boldsymbol{\beta}_{r_2})]} = \exp[(\boldsymbol{x}_i^{*}- \boldsymbol{x}_i)^T(\boldsymbol{\beta}_{r_1} - \boldsymbol{\beta}_{r_2})] = \exp(\boldsymbol{\beta}_{r_1,j} - \boldsymbol{\beta}_{r_2,j}).
+$$
+
+A similar interpretation can be found for the odds between category $r$ and the complementary of $r$ (or simply not in the category $r$), and is formulized as 
+$$
+\frac{\pi_{i,r}}{1-\pi_{i,r}} = \frac{\exp(\boldsymbol{x}_i^T\boldsymbol{\beta}_r)}{1 + \sum_{s\in\mathcal{S}}\exp(\boldsymbol{x}_i^T\boldsymbol{\beta_s})}, 
+$$
+where $\mathcal{S} = \{s \in [1,c]\setminus r \}$ is the set containing all categories but $r$ and the reference. 
+
+Observe that $\pi_r(\boldsymbol{x}) \propto \exp(\boldsymbol{x}^T\boldsymbol{\beta}_r)$ with the denominator being the a normalizing constant, and that the effects $\boldsymbol{\beta}_r$ includes a interecept $\beta_{0,r}$ and the effect of age $\beta_{\mathrm{age},r}$ for category $r$. Therefore, as $x > 0$ the function $\pi(\boldsymbol{x})$ is a monotonic function only for a intercept $\beta_{0,r}=0$, and otherwise it's slope is changing from decreasing to increase or oppositley depending on the sign of the effect of age. 
+
+We could also formulate the multinomial logistic regression as a latent utility model: 
+$$
+u_r = \eta_r + \epsilon_r,
+$$
+where $u_r$ is the utility, $\eta_r$ the linear predictor and $\epsilon_r$ some error of the $r$th category. Furthermore, we assume that the error follow a standard Gumbel distribution, $\epsilon \sim \mathrm{Gumbel}(0,1)$. The aim is to find the probabilities of choosing $Y=r$ for all $r$ or find the probability that the $r$th utility, $u_{i,r}$ is larger than all other utilities for a given subject $i$. The differece between two identically distributed Gumbel distributions follows a logistic distibution and, thus, the probabilities $\pi_r$ in the latent utility model is found similar previous formulation using Equation \eqref{eq:prob1}.
+
+
+```{r compare}
+mod0 <- vglm(mstatus ~ 1, multinomial)
+anova(mod0, mod1, test="LRT", type="I")
+```
+
+To obtain predictions of the probabilties of the belonging to the respective categories given a age between $16$ and $88$ can be found rewriting Equation \eqref{eq:odds} using Equation \eqref{eq:prob2}. The different probabilities can be visualized in the figure below, where the probabilities functions $\pi_r(x) = P(Y=r)$ is plotted against the covariate `age`, $x$. 
+```{r predprob}
+ymp1 = predict(mod1,newdata = data.frame(age=seq(16,88)))
+ymp1.df = as.data.frame(matrix(cbind(seq(16,88),exp(ymp1)*(1/(1 + rowSums(exp(ymp1)))),
+                                     (1/(1 + rowSums(exp(ymp1))))),ncol=5,
+                               dimnames = list(c(),c("age","pi1","pi2","pi3","pi4"))))
+```
+
+```{r plotpredprob, echo=FALSE}
+ggplot(ymp1.df) + 
+  geom_line(aes(x=age,y=pi1,color="Divorced")) + 
+  geom_line(aes(x=age,y=pi2,color="Married")) + 
+  geom_line(aes(x=age,y=pi3,color="Single")) + 
+  geom_line(aes(x=age,y=pi4,color="Widowed")) +
+  labs(y = "P(Y=r)", color = "") + 
+  theme_bw()
+```
+
+The number of `Single` is monotonically decreasing as the age gets higher, which is reasonable since people generally get `Married` or find a partner during their life. And since a individual can't go back to being single because of the `Divorced/Seperated` category, it can't start increasing again as age increases. 
+
+The probability of getting `Married` however is increasing until age is $\simeq 50$, where it starts to decrease. This could be explained by individual getting `Divorced` or `Seperated` after some time together, or that their partner dies resulting in being placed in the `Widowed` category. 
+
+The `Divorced`category is close to horisontal but is slightly concave with a maximum around age $65$, and lastly, the widow is monotonically increasing. Both of these functions have a reasonable behavior as the number of proportion of `Widowed` should go up because of the correlation between `age`and `mortality`. 
+
+Thus far we have only considered a linear effect of `age`; however, models that regard a linear effect of higher degrees of `age` might yield a better approximation. We will now fit different multinomial logit models with degrees of `age` up to four as covariates and, then, perform model selection based on the *Akaike information criterion* (AIC). In the code below the models are fit and the probabilities of `age` betwen 16 to 88 is predicted. 
+
+```{r polyfit}
+ymp0 = predict(mod0,newdata = data.frame(age=seq(16,88)))
+ymp0.df = as.data.frame(matrix(cbind(seq(16,88),exp(ymp0)*(1/(1 + rowSums(exp(ymp0)))),
+                                     (1/(1 + rowSums(exp(ymp0))))),ncol=5,
+                               dimnames = list(c(),c("age","pi1","pi2","pi3","pi4"))))
+mod2 <- vglm(mstatus ~ poly(age,2), multinomial)
+ymp2 = predict(mod2,newdata = data.frame(age=seq(16,88)))
+ymp2.df = as.data.frame(matrix(cbind(seq(16,88),exp(ymp2)*(1/(1 + rowSums(exp(ymp2)))),
+                                     (1/(1 + rowSums(exp(ymp2))))),ncol=5,
+                               dimnames = list(c(),c("age","pi1","pi2","pi3","pi4"))))
+mod3 <- vglm(mstatus ~ poly(age,3), multinomial)
+ymp3 = predict(mod3,newdata = data.frame(age=seq(16,88)))
+ymp3.df = as.data.frame(matrix(cbind(seq(16,88),exp(ymp3)*(1/(1 + rowSums(exp(ymp3)))),
+                                     (1/(1 + rowSums(exp(ymp3))))),ncol=5,
+                               dimnames = list(c(),c("age","pi1","pi2","pi3","pi4"))))
+mod4 <- vglm(mstatus ~ poly(age,4), multinomial)
+ymp4 = predict(mod4,newdata = data.frame(age=seq(16,88)))
+ymp4.df = as.data.frame(matrix(cbind(seq(16,88),exp(ymp4)*(1/(1 + rowSums(exp(ymp4)))),
+                                     (1/(1 + rowSums(exp(ymp4))))),ncol=5,
+                               dimnames = list(c(),c("age","pi1","pi2","pi3","pi4"))))
+```
+
+Using these predicted probabilities the figure below is constructed to visualized the dissimilarities between the models (presented in different colors). The associated categories is highlighted on the y-axis.
+
+```{r plotpi1, echo = FALSE}
+library(ggpubr)
+r1 <- ggplot() + 
+  geom_line(data=ymp0.df, aes(x=age,y = pi1, color = "1")) + 
+  geom_line(data=ymp1.df, aes(x=age,y = pi1, color = "age")) + 
+  geom_line(data=ymp2.df, aes(x=age,y = pi1, color = "poly(age,2)")) + 
+  geom_line(data=ymp3.df, aes(x=age,y = pi1, color = "poly(age,3)")) +
+  geom_line(data=ymp4.df, aes(x=age,y = pi1, color = "poly(age,4)")) + 
+  labs(y = "P(Divorced)",color="Model") + 
+  theme_bw()
+  
+r2 <- ggplot() + 
+  geom_line(data=ymp0.df, aes(x=age,y = pi2, color = "1")) + 
+  geom_line(data=ymp1.df, aes(x=age,y = pi2, color = "age")) + 
+  geom_line(data=ymp2.df, aes(x=age,y = pi2, color = "poly(age,2)")) + 
+  geom_line(data=ymp3.df, aes(x=age,y = pi2, color = "poly(age,3)")) +
+  geom_line(data=ymp4.df, aes(x=age,y = pi2, color = "poly(age,4)")) + 
+  labs(y="P(Married)",color="Model") + 
+  theme_bw()
+
+r3 <- ggplot() + 
+  geom_line(data=ymp0.df, aes(x=age,y = pi3, color = "1")) + 
+  geom_line(data=ymp1.df, aes(x=age,y = pi3, color = "age")) + 
+  geom_line(data=ymp2.df, aes(x=age,y = pi3, color = "poly(age,2)")) + 
+  geom_line(data=ymp3.df, aes(x=age,y = pi3, color = "poly(age,3)")) +
+  geom_line(data=ymp4.df, aes(x=age,y = pi3, color = "poly(age,4)")) + 
+  labs(y="P(Single)",color="Model") + 
+  theme_bw()
+
+r4 <- ggplot() + 
+  geom_line(data=ymp0.df, aes(x=age,y = pi4, color = "1")) + 
+  geom_line(data=ymp1.df, aes(x=age,y = pi4, color = "age")) + 
+  geom_line(data=ymp2.df, aes(x=age,y = pi4, color = "poly(age,2)")) + 
+  geom_line(data=ymp3.df, aes(x=age,y = pi4, color = "poly(age,3)")) +
+  geom_line(data=ymp4.df, aes(x=age,y = pi4, color = "poly(age,4)")) + 
+  labs(y="P(Widowed)",color="Model") + 
+  theme_bw()
+
+ggarrange(r1,r2,r3,r4,common.legend = T,legend = "bottom")
+```
+
+As previously mentioned the model selection will be based on minimizing the AIC which is calculated as
+$$
+\mathrm{AIC} = 2\cdot k - 2\cdot \ln(\hat{\mathrm{L}}).
+$$
+Here, $k$ is the number of parameters in the model and $\hat{\mathrm{L}}$ is the likelihood. The AIC then tries to asses the goodness-of-fit through the likelihood but also considers the complexity or number of parameters of the model as a penalty. For example in the model with a 4th degree polynomial of `age` we have $k = 3 \cdot 5$ parameters; 3 from the number of categories $c=3$ using the $r=4$ as reference, and 5 for the number of terms in a 4th degree polynomial. In \textsc{R} we can use the built in function `AIC()` to calculate the AIC for a `VGAM` object. The AIC values for the respective models is printed below.
+```{r AICcalc}
+AIC(mod0)
+AIC(mod1)
+AIC(mod2)
+AIC(mod3)
+AIC(mod4)
+```
+
+Here, we observe that the most complex model, a 4th degree polynomial of `age`, has the highest AIC score. Considering the predicted probabilities in the above figures, the best model seem to overfit the data as seen by the tails for high values of `age` in `Married` and `Widowed` turn alot compared to the other models. In other words, the model might perform bad on new unseen data. 
+
+```{r endup, include=FALSE}
+options(warn = defaultW)
+```
