@@ -24,7 +24,7 @@ In this project, we will use multinomial regression on a dataset containing mari
 attach(marital.nz)
 head(marital.nz)
 ```
-There are a total of four catagories for marital status `mstatus` and we will try to predict the probabilty of each based on the age. A multinomial regression model with a linear effect of `age` is fit to the data as
+There are a total of four catagories for marital status (`mstatus`); `Single`, `Married/Partnered`, `Divorced` and `Widowed`. And we will try to predict the probabilty of each based on the age. A multinomial regression model with a linear effect of `age` is fit to the data as
 ```{r fitvglm}
  mod1 <- vglm(mstatus ~ age, multinomial)
  summary(mod1)
@@ -47,12 +47,12 @@ f(\boldsymbol{y}|\boldsymbol{\pi}) &= \frac{m!}{y_1!\cdot y_2!\cdot y_3!\cdot (1
  & = \mathcal{M}(m,\boldsymbol{\pi}),
 \end{aligned}
 $$
-where $\mathcal{M}(m,\boldsymbol{\beta})$ is the multinomial probability mass function with $m$ trials and probabilities $\boldsymbol{\pi} = (\pi_1,\pi_2,\pi_3)$. Using the linear predictor $\eta_{i,r} = \boldsymbol{x}_i^T\boldsymbol{\beta}_r$ and considering the logit model we have the probabilities:
+where $\mathcal{M}(m,\boldsymbol{\beta})$ is the multinomial probability mass function with $m$ trials and probabilities $\boldsymbol{\pi} = (\pi_1,\pi_2,\pi_3)$. Using the linear predictor $\eta_{i,r} = \boldsymbol{x}_i^T\boldsymbol{\beta}_r$ and considering a logit model, we have the probabilities:
 \begin{equation}
  \pi_{i,r} = \frac{\exp(\boldsymbol{x}_i^T\boldsymbol{\beta}_r)}{\sum_{s=1}^{c+1} \exp(\boldsymbol{x}_i^T \boldsymbol{\beta}_s)}.
  \label{eq:prob1}
 \end{equation}
-However, this model is non-identifiable as adding a constant to the linear predictor would yield the same probabilities. Therefore as mentioned previously, one of the categories is used as *reference* category s.t. $\boldsymbol{\beta}_r = \boldsymbol{\beta}_r - \boldsymbol{\beta}_{c+1}$, where $c+1 = 4$ in this model. The resulting probabilities are found by 
+However, this model is non-identifiable because adding a constant to the linear predictor would yield the equivalent probabilities. Therefore, as mentioned earlier, one of the categories is used as *reference* category s.t. $\boldsymbol{\beta}_r = \boldsymbol{\beta}_r - \boldsymbol{\beta}_{c+1}$, where $c+1 = 4$ in this model. The resulting probabilities are 
 \begin{equation}
  \pi_{i,r} = \frac{1}{1+ \sum_{s=1}^{c} \exp(\boldsymbol{x}_i^T \boldsymbol{\beta}_s)}
  \begin{cases}
@@ -66,13 +66,13 @@ An alternative representation is the logarithmic odds or relative risk between c
 \log\frac{\pi_{i,r}}{\pi_{i,c+1}} = \boldsymbol{x}^T_i \boldsymbol{\beta}_r.
 \label{eq:odds}
 \end{equation}
-This logarithmic odds is also the output of a `predict()` call using the model object `mod1`, and is presented in the `Pearson residuals` in the `summary()` ouput above. Note that with this representation the a prositive effect $\beta_r$ only implies that the odds of category $r$ increase relative the reference category, and not that the probability of $r$ increase by itself. 
+This logarithmic odds is also the output of a `predict()` call using the model object `mod1`, and is presented in the `Pearson residuals` in the `summary()` output above. Note that with this representation a positive effect $\beta_r$ only implies that the odds of category $r$ increase relative the reference category, and not that the probability of $r$ increase by itself. 
 
-In general, the interpretation odd ratio is the magnitude of change in the odds between two categories $r_1$ and $r_2$ for a individual $i$ by a unit change in the $j$th element of the covariate, $x_{i,j}$, as
+In general, the interpretation of odd ratio is the magnitude of change in the odds between two categories $r_1$ and $r_2$ for a individual $i$ by a unit change in the $j$th element of the covariates, $x_{i,j}$, as
 $$
 \boldsymbol{x}_i^* = \boldsymbol{x}_i + (0,\dots,1,\dots,0)^T,
 $$
-gives the odds ratio:
+which yields the odds ratio:
 $$
 \frac{\pi_{i,r_1}^*/\pi_{i,r_2}^*}{\pi_{i,r_1}/\pi_{i,r_2}} = \frac{\exp[\boldsymbol{x}_i^{*T}(\boldsymbol{\beta}_{r_1} - \boldsymbol{\beta}_{r_2})]}{\exp[\boldsymbol{x}_i^{T}(\boldsymbol{\beta}_{r_1} - \boldsymbol{\beta}_{r_2})]} = \exp[(\boldsymbol{x}_i^{*}- \boldsymbol{x}_i)^T(\boldsymbol{\beta}_{r_1} - \boldsymbol{\beta}_{r_2})] = \exp(\boldsymbol{\beta}_{r_1,j} - \boldsymbol{\beta}_{r_2,j}).
 $$
@@ -91,11 +91,17 @@ u_r = \eta_r + \epsilon_r,
 $$
 where $u_r$ is the utility, $\eta_r$ the linear predictor and $\epsilon_r$ some error of the $r$th category. Furthermore, we assume that the error follow a standard Gumbel distribution, $\epsilon \sim \mathrm{Gumbel}(0,1)$. The aim is to find the probabilities of choosing $Y=r$ for all $r$ or find the probability that the $r$th utility, $u_{i,r}$ is larger than all other utilities for a given subject $i$. The differece between two identically distributed Gumbel distributions follows a logistic distibution and, thus, the probabilities $\pi_r$ in the latent utility model is found similar previous formulation using Equation \eqref{eq:prob1}.
 
-
+Thus far, we have just assumed that the linear effect `age` is statistically significant in modelling the `mstatus`; however, we would like perform a test to confirm our assumption. A such test could be a *Likelihood-ratio test* (LRT), which compares the goodness-of-fit in the *null* model (only a intercept) and the fitted model `mod1` with a linear effect of `age`. The test uses the fact that the difference in log-likelihood beteen the two models is chi-squared distributed as 
+$$
+ - 2 [\ell(\hat{\boldsymbol{\beta}_n}) - \ell(\hat{\boldsymbol{\beta}}_a)] \sim \mathcal{X}_{p_n-p_a}^2,
+$$
+where the index $n$ defines the *null* model and $a$ the alternative model, $\ell()$ is the log-likelihood, $\hat{\boldsymbol{\beta}}$ are the fitted parameters of the respective models, and $p$ is the number of parameters in each model. Thus, the degrees of freedom of the chi-squared distribution is the difference in number of parameters in the two models. Given a significance level let's say $\alpha = 0.05$, we have the critical point with $3$ degrees of freedom $q_{\alpha = 0.05,\nu = 3} \simeq 7.81$ and the likelihood ration, (or deviance if you want), is $\mathrm{LR} = - 2 [\ell(\hat{\boldsymbol{\beta}_n}) - \ell(\hat{\boldsymbol{\beta}}_a)] \simeq 1600.9$. Since $\mathrm{LR}>>q_{\alpha = 0.05,\nu = 3}$ the model with the linear effect of `age` is much better than the *null*-model, i.e. the linear effect of `age` is statistically significant. We could also have use `anova()` to show this as presented in the code below.
 ```{r compare}
 mod0 <- vglm(mstatus ~ 1, multinomial)
 anova(mod0, mod1, test="LRT", type="I")
 ```
+Here, the $p$-value is much lower than the significance level of $0.05$ and we observe that the deviance is similar to our previous calculations. 
+
 
 To obtain predictions of the probabilties of the belonging to the respective categories given a age between $16$ and $88$ can be found rewriting Equation \eqref{eq:odds} using Equation \eqref{eq:prob2}. The different probabilities can be visualized in the figure below, where the probabilities functions $\pi_r(x) = P(Y=r)$ is plotted against the covariate `age`, $x$. 
 ```{r predprob}
