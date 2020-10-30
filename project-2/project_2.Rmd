@@ -19,16 +19,17 @@ library(VGAM)
 library(ggplot2)
 ```
 
-In this project, we will use multinomial regression on a dataset containing marital status, etnicity and age of individuals in New Zealand. The data is loaded in the code below, and the print display seven individuals. 
+In this project, we will use multinomial regression on a dataset containing marital status, ethnicity and age of individuals in New Zealand. The data is loaded in the code below, and the `print` display seven individuals. 
 ```{r data}
 attach(marital.nz)
 head(marital.nz)
 ```
-There are a total of four catagories for marital status (`mstatus`); `Single`, `Married/Partnered`, `Divorced` and `Widowed`. And we will try to predict the probabilty of each based on the age. A multinomial regression model with a linear effect of `age` is fit to the data as
+There are a total of four catagories for marital status (`mstatus`); `Single`, `Married/Partnered`, `Divorced` and `Widowed`. And we will try to predict the probabilty of each based on the age for a given individual. A multinomial regression model with a linear effect of `age` is fit to the data as
 ```{r fitvglm}
  mod1 <- vglm(mstatus ~ age, multinomial)
  summary(mod1)
 ```
+We will now explain the mathematical devolopment of this model. 
 The `mstatus` is a categorical nominal response $Y \in \{1,2,3,4\}$ modelled with the linear effect of a numerical covariate `age`. Given a catoregory $r$ of the response, the probability of the subject having the $r$th `mstatus` is given by
 $$
 \pi_r = P(Y=r), \enspace r = 1,2,3,4.
@@ -83,25 +84,28 @@ $$
 $$
 where $\mathcal{S} = \{s \in [1,c]\setminus r \}$ is the set containing all categories but $r$ and the reference. 
 
-Observe that $\pi_r(\boldsymbol{x}) \propto \exp(\boldsymbol{x}^T\boldsymbol{\beta}_r)$ with the denominator being the a normalizing constant, and that the effects $\boldsymbol{\beta}_r$ includes a interecept $\beta_{0,r}$ and the effect of age $\beta_{\mathrm{age},r}$ for category $r$. Therefore, as $x > 0$ the function $\pi(\boldsymbol{x})$ is a monotonic function only for a intercept $\beta_{0,r}=0$, and otherwise it's slope is changing from decreasing to increase or oppositley depending on the sign of the effect of age. 
+The probabilities calculated with Equation \eqref{eq:prob2} aren't necessarily monotonic functions of $x$. First, we observe that numerator is $\exp(\cdot)$ which is a monotonic function, and that the denominator is a sum of multiple of these monotonic functions. The quotient between two $\exp()$ functions is always monotonic; however, a sum of multiple $\exp()$ is not necessarily monotonic. Let us say that $f_1,\dots,f_N$ are monotonically increasing functions for $x>0$. Then for a $y > x$, we have that the sums
+$$
+f_1(x) + \dots + f_N(x) \leq f_1(y) + \dots f_N(y);
+$$
+therefore, $f()$ is monotincally increasing. Similarly, we have that the sum monotonically decreasing functions $g_1,\dots,g_M$ is monotincally decreasing. Now, consider the sum of all increasing functions $F(x) = \sum_{n=1}^N f_n(x)$ and the decreasing functions $G(x) = \sum_{m=1}^M g_m(x)$ s.t. $G(x) + F(x)$ are not necessarily monotically increasing. If the derivative of $-G(x)$ is greater than $F(x)$ for small $x$, but smaller for larger values of $x$, then their sum is not monotonic. For example $F(x) = x^3$ and $G(x) = -x$ is together not monotonic. Thus, if the denominator is not monotonic the quotient is not monotonic. This can also be viewed in the Figure for the probabilities in `mod1` below, where the probability for `Marriage` is not a monotonic function of `age`.
 
 We could also formulate the multinomial logistic regression as a latent utility model: 
 $$
 u_r = \eta_r + \epsilon_r,
 $$
-where $u_r$ is the utility, $\eta_r$ the linear predictor and $\epsilon_r$ some error of the $r$th category. Furthermore, we assume that the error follow a standard Gumbel distribution, $\epsilon \sim \mathrm{Gumbel}(0,1)$. The aim is to find the probabilities of choosing $Y=r$ for all $r$ or find the probability that the $r$th utility, $u_{i,r}$ is larger than all other utilities for a given subject $i$. The differece between two identically distributed Gumbel distributions follows a logistic distibution and, thus, the probabilities $\pi_r$ in the latent utility model is found similar previous formulation using Equation \eqref{eq:prob1}.
+where $u_r$ is the utility, $\eta_r$ the linear predictor and $\epsilon_r$ some error of the $r$th category. Furthermore, we assume that the error follow a standard Gumbel distribution, $\epsilon \sim \mathrm{Gumbel}(0,1)$. The aim is to find the probabilities of choosing $Y=r$ for all $r$ or find the probability that the $r$th utility, $u_{i,r}$ is larger than all other utilities for a given subject $i$. The differece between two identically distributed Gumbel distributions follows a logistic distibution and, thus, the probabilities $\pi_r$ in the latent utility model is similar to the previous formulation using Equation \eqref{eq:prob1}.
 
-Thus far, we have just assumed that the linear effect `age` is statistically significant in modelling the `mstatus`; however, we would like perform a test to confirm our assumption. A such test could be a *Likelihood-ratio test* (LRT), which compares the goodness-of-fit in the *null* model (only a intercept) and the fitted model `mod1` with a linear effect of `age`. The test uses the fact that the difference in log-likelihood beteen the two models is chi-squared distributed as 
+Until now we have just assumed that the linear effect `age` is statistically significant in modelling the `mstatus`; however, we would like perform a test to confirm our assumption. A such test could be a *Likelihood-ratio test* (LRT), which compares the goodness-of-fit in the *null* model (only a intercept) and the fitted model `mod1` with a linear effect of `age`. The test uses the fact that the difference in log-likelihood beteen the two models is chi-squared distributed as 
 $$
  - 2 [\ell(\hat{\boldsymbol{\beta}_n}) - \ell(\hat{\boldsymbol{\beta}}_a)] \sim \mathcal{X}_{p_n-p_a}^2,
 $$
-where the index $n$ defines the *null* model and $a$ the alternative model, $\ell()$ is the log-likelihood, $\hat{\boldsymbol{\beta}}$ are the fitted parameters of the respective models, and $p$ is the number of parameters in each model. Thus, the degrees of freedom of the chi-squared distribution is the difference in number of parameters in the two models. Given a significance level let's say $\alpha = 0.05$, we have the critical point with $3$ degrees of freedom $q_{\alpha = 0.05,\nu = 3} \simeq 7.81$ and the likelihood ration, (or deviance if you want), is $\mathrm{LR} = - 2 [\ell(\hat{\boldsymbol{\beta}_n}) - \ell(\hat{\boldsymbol{\beta}}_a)] \simeq 1600.9$. Since $\mathrm{LR}>>q_{\alpha = 0.05,\nu = 3}$ the model with the linear effect of `age` is much better than the *null*-model, i.e. the linear effect of `age` is statistically significant. We could also have use `anova()` to show this as presented in the code below.
+where the index $n$ defines the *null* model and $a$ the alternative model, $\ell()$ is the log-likelihood, $\hat{\boldsymbol{\beta}}$ are the fitted parameters of the respective models, and $p$ is the number of parameters in each model. The degrees of freedom of the chi-squared distribution is the difference in number of parameters in the two models. Given a significance level let's say $\alpha = 0.05$, we have the critical point with $3$ degrees of freedom $q_{\alpha = 0.05,\nu = 3} \simeq 7.81$ and the likelihood ration, (or deviance), is $\mathrm{LR} = - 2 [\ell(\hat{\boldsymbol{\beta}_n}) - \ell(\hat{\boldsymbol{\beta}}_a)] \simeq 1600.9$. Since $\mathrm{LR}>>q_{\alpha = 0.05,\nu = 3}$ the model with the linear effect of `age` is much better than the *null*-model, i.e. the linear effect of `age` is statistically significant. We could also have used `anova()` to show this as presented in the code below.
 ```{r compare}
 mod0 <- vglm(mstatus ~ 1, multinomial)
 anova(mod0, mod1, test="LRT", type="I")
 ```
 Here, the $p$-value is much lower than the significance level of $0.05$ and we observe that the deviance is similar to our previous calculations. 
-
 
 To obtain predictions of the probabilties of the belonging to the respective categories given a age between $16$ and $88$ can be found rewriting Equation \eqref{eq:odds} using Equation \eqref{eq:prob2}. The different probabilities can be visualized in the figure below, where the probabilities functions $\pi_r(x) = P(Y=r)$ is plotted against the covariate `age`, $x$. 
 ```{r predprob}
@@ -123,9 +127,9 @@ ggplot(ymp1.df) +
 
 The number of `Single` is monotonically decreasing as the age gets higher, which is reasonable since people generally get `Married` or find a partner during their life. And since a individual can't go back to being single because of the `Divorced/Seperated` category, it can't start increasing again as age increases. 
 
-The probability of getting `Married` however is increasing until age is $\simeq 50$, where it starts to decrease. This could be explained by individual getting `Divorced` or `Seperated` after some time together, or that their partner dies resulting in being placed in the `Widowed` category. 
+The probability of getting `Married` however is increasing until age is $\simeq 50$, where it starts to decrease. This could be explained by individuals getting `Divorced` or `Seperated` after some time together, or that their partner dies resulting in being placed in the `Widowed` category. 
 
-The `Divorced`category is close to horisontal but is slightly concave with a maximum around age $65$, and lastly, the widow is monotonically increasing. Both of these functions have a reasonable behavior as the number of proportion of `Widowed` should go up because of the correlation between `age`and `mortality`. 
+The `Divorced`category is close to horisontal but is slightly concave with a maximum around age $55$, and lastly, the widow is monotonically increasing. Both of these functions have a reasonable behavior as the number of proportion of `Widowed` should go up because of the assumed correlation between `age`and `mortality`. 
 
 Thus far we have only considered a linear effect of `age`; however, models that regard a linear effect of higher degrees of `age` might yield a better approximation. We will now fit different multinomial logit models with degrees of `age` up to four as covariates and, then, perform model selection based on the *Akaike information criterion* (AIC). In the code below the models are fit and the probabilities of `age` betwen 16 to 88 is predicted. 
 
@@ -151,7 +155,7 @@ ymp4.df = as.data.frame(matrix(cbind(seq(16,88),exp(ymp4)*(1/(1 + rowSums(exp(ym
                                dimnames = list(c(),c("age","pi1","pi2","pi3","pi4"))))
 ```
 
-Using these predicted probabilities the figure below is constructed to visualized the dissimilarities between the models (presented in different colors). The associated categories is highlighted on the y-axis.
+Using these predicted probabilities the figure below is constructed to visualized the dissimilarities between the models (presented in different colors). The respective categories is highlighted on the y-axis.
 
 ```{r plotpi1, echo = FALSE}
 library(ggpubr)
