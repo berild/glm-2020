@@ -1,0 +1,47 @@
+---
+author: $\overset{\mathrm{martin.o.berild@ntnu.no}}{10014}$ \and
+        $\overset{\mathrm{yaolin.ge@ntnu.no}}{10026}$
+date: \today
+title: "Project 3 - TMA4315"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+defaultW <- getOption("warn") 
+
+options(warn = -1) 
+```
+
+## Problem 1 
+
+We are interested in computing the maximum likelihood and restricted maximum likelihood estimates of the parameters in the linear mixed model 
+
+$$
+y_{ij} = \beta_0 + \beta_1x_{ij} + \gamma_{0,i} + \gamma_{1,i}x_{ij} + \epsilon_{ij},
+$$
+where $\boldsymbol{\gamma}_i = (\gamma_{0,i},\gamma_{1,i})$ are iid binomially distributed with zero mean and covariance matrix
+
+$$
+\begin{bmatrix}
+\tau_0^2 & \tau_{01} \\
+\tau_{01} & \tau_{1}^2
+\end{bmatrix},
+$$
+and $\epsilon_{ij}$ are idd Guassian distributed with zero mean and variance $\sigma^2$ for $i = 1,\dots,m$ and $j=1,\dots,n$. Thus, we are interested in obtaining the estimates of $(\beta_0,\beta_1,\tau_0^2,\tau_1^2,\tau_{01},\sigma^2)$. 
+
+
+## Problem 2
+
+Next, we are interested in modelling the 2018 results of the Norwegian elite football league using a generalized linear mixed model. First we load the data and display the contents.
+
+```{r dataload}
+long <- read.csv("https://www.math.ntnu.no/emner/TMA4315/2020h/eliteserie.csv", colClasses = c("factor","factor","factor","numeric"))
+head(long)
+```
+
+
+
+```{r endup, include=FALSE}
+options(warn = defaultW)
+```
