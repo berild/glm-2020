@@ -9,39 +9,372 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 defaultW <- getOption("warn") 
-
 options(warn = -1) 
 ```
 
-## Problem 1 
+## Mixed Model example
 
-We are interested in computing the maximum likelihood and restricted maximum likelihood estimates of the parameters in the linear mixed model 
-
+In this problem we want to implement a function `mylmm` that computes the maximum likelihood or if specified the restricted maximum likelihood estimates of the parameters $(\beta_0,\beta_1,\tau_0^2,\tau_1^2,\sigma^2)$ of the mixed model
 $$
-y_{ij} = \beta_0 + \beta_1x_{ij} + \gamma_{0,i} + \gamma_{1,i}x_{ij} + \epsilon_{ij},
+y_{ij} = \beta_0 + \beta_1x_{ij} + \gamma_{0i} + \gamma_{1j}x_{ij} + \epsilon_{ij},
 $$
-where $\boldsymbol{\gamma}_i = (\gamma_{0,i},\gamma_{1,i})$ are iid binomially distributed with zero mean and covariance matrix
-
+where $\boldsymbol{\gamma} = (\gamma_{0i}, \gamma_{1j})$ is independent and identically (i.i.d.) Gaussian distributed with zero mean and covariance matrix:
 $$
 \begin{bmatrix}
 \tau_0^2 & \tau_{01} \\
-\tau_{01} & \tau_{1}^2
+\tau_{01} & \tau_1^2
 \end{bmatrix},
 $$
-and $\epsilon_{ij}$ are idd Guassian distributed with zero mean and variance $\sigma^2$ for $i = 1,\dots,m$ and $j=1,\dots,n$. Thus, we are interested in obtaining the estimates of $(\beta_0,\beta_1,\tau_0^2,\tau_1^2,\tau_{01},\sigma^2)$. 
+and $\epsilon_{ij}$ is i.i.d. $\mathcal{N}(0,\sigma^2)$.
 
 
-## Problem 2
+It can be shown that the matrix formulation has two steps. First, the measurement model can be rewritten as follows:
 
-Next, we are interested in modelling the 2018 results of the Norwegian elite football league using a generalized linear mixed model. First we load the data and display the contents.
+$$
+y_{ij} = \mathbf{x}_{ij}^T\boldsymbol{\beta} + \mathbf{u}_{ij}^T\boldsymbol{\gamma_i} + \epsilon_{ij}
+$$
+In this case, 
 
-```{r dataload}
+$$
+\mathbf{x}_{ij} = \begin{bmatrix} 1 \\ x_{ij}  \end{bmatrix}; \ \ \mathbf{u}_{ij} = \begin{bmatrix} 1 \\ x_{ij}  \end{bmatrix}; \ \ 
+\boldsymbol{\beta} = \begin{bmatrix} \beta_0 \\ \beta_1  \end{bmatrix}; \ \ 
+\boldsymbol{\gamma}_i = \begin{bmatrix} \gamma_{0, i} \\ \gamma_{1, i}  \end{bmatrix}
+$$
+By collecting all individual- and cluster-specific responses $y_{ij}$, design vectors $\mathbf{x}_{ij}, \mathbf{u}_{ij}$ and errors $\epsilon_{ij}, j = 1, \cdots, n_i$ into vectors, then it becomes:
+
+$$
+\mathbf{y}_i = \begin{pmatrix} y_{i1} \\ \vdots \\ y_{ij} \\ \vdots \\ y_{in_i}  \end{pmatrix}; \ \ 
+\mathbf{X}_i = \begin{pmatrix} \boldsymbol{x}_{i1}^{T} \\ \vdots \\ \boldsymbol{x}_{ij}^{T} \\ \vdots \\ \boldsymbol{x}_{in_i}^{T}  \end{pmatrix}; \ \ 
+\mathbf{U}_i = \begin{pmatrix} \boldsymbol{u}_{i1}^{T} \\ \vdots \\ \boldsymbol{u}_{ij}^{T} \\ \vdots \\ \boldsymbol{u}_{in_i}^{T}  \end{pmatrix}; \ \ 
+\boldsymbol{\epsilon}_i = \begin{pmatrix} \epsilon_{i1} \\ \vdots \\ \epsilon_{ij} \\ \vdots \\ \epsilon_{in_i} \end{pmatrix} \ \ 
+$$
+
+Thus, the measurement model in matrix notation is 
+
+$$
+\boldsymbol{y}_i = \boldsymbol{X}_i\boldsymbol{\beta} + \boldsymbol{U_i}\boldsymbol{\gamma_i} + \boldsymbol{\epsilon_i}, \ \ i = 1, \cdots, m
+$$
+Given that 
+$$
+\boldsymbol{\gamma}_i \sim \mathcal{N}(\boldsymbol{0}, \boldsymbol{Q}); \ \ 
+\boldsymbol{\epsilon}_i \sim \mathcal{N}(\boldsymbol{0}, \sigma^2\boldsymbol{I_{n_i}})
+$$
+Thus, squeeze the above LMM model by defining the design matrices as follows:
+$$
+\boldsymbol{y} = \begin{pmatrix} \boldsymbol{y}_1 \\ \vdots \\ \boldsymbol{y}_i\\ \vdots \\ \boldsymbol{y}_m \end{pmatrix}; \ \ 
+\boldsymbol{\epsilon} = \begin{pmatrix} \boldsymbol{\epsilon}_1 \\ \vdots \\ \boldsymbol{\epsilon}_i\\ \vdots \\ \boldsymbol{\epsilon}_m \end{pmatrix}; \ \ 
+\boldsymbol{\gamma} = \begin{pmatrix} \boldsymbol{\gamma}_1 \\ \vdots \\ \boldsymbol{\gamma}_i\\ \vdots \\ \boldsymbol{\gamma}_m \end{pmatrix}; \ \ 
+$$
+
+
+
+Therefore, the LMM can be rewritten as
+
+$$
+\boldsymbol{y} = \boldsymbol{X}\boldsymbol{\beta} + \boldsymbol{U}\boldsymbol{\gamma} + \boldsymbol{\epsilon}
+$$
+
+Our implementation of the `mylmm()` function is given below:
+```{r mylmm}
+library(Matrix)
+mylmm <- function(y, x, group, REML = FALSE){
+  X = cbind(1, x) # design matrix for fixed effects
+  logdet <- function(A) as.numeric(determinant(A)$mod)
+  # generate the design matrix
+  U = list()
+  for (i in levels(group)) {
+    U[[i]] = cbind(1,x[group==i])
+  }
+  U = bdiag(U) # design matrix for random effects
+  
+  V_func <- function(theta, U){ # function used to find V matrix
+    # tau0^2 = theta[1]; tau1^2 = theta[2]; tau01 = theta[3]; sigma^2 = theta[4]
+    DIM = dim(U)
+    n_total = DIM[1]
+    n_groups = DIM[2] / 2
+    R <- diag(theta[4], nrow = n_total)
+    # R is a n_total * n_total matrix for the independent variance
+    Q <- matrix(c(theta[1], theta[3], theta[3], theta[2]), nrow = 2, byrow = TRUE)
+    G <- list()
+    for (i in c(1:n_groups)){
+      G[[i]] <- Q
+    }
+    G <- bdiag(G)
+    V <- U %*% G %*% t(U) + R # variance matrix
+    return(V)
+  }
+  Beta_func <- function(V, X, y){ # function used to find beta
+    solve(t(X) %*% solve(V) %*% X) %*% t(X) %*% solve(V) %*% y # Estimated parameters
+  }
+  loglik <- function(theta){ # loglik function
+    V <- V_func(theta, U)
+    Beta <- Beta_func(V, X, y)
+    if(!REML){
+      return(as.vector(- 1 / 2 * (logdet(V) +
+                             t(y - X %*% Beta) %*% solve(V) %*%
+                             (y - X %*% Beta)))) # profile log likelihood
+    } else{
+      return(as.vector( - 1 / 2 * (logdet(V) + t(y - X %*% Beta) %*%
+                             solve(V) %*% (y - X %*% Beta)) -
+                          (1 / 2) * (logdet(t(X) %*% solve(V) %*% X))))
+    }
+  }
+  theta_hat <- optim(par=c(0.1, 0.1, 0.1, 0.1), loglik,
+                     method="L-BFGS-B",lower=c(.001,.001,-1,.001),
+                     upper=c(Inf,Inf,Inf,Inf),control=list(fnscale=-1))$par
+  beta_hat <- Beta_func(V_func(theta_hat, U), X, y)
+  return(c(beta_hat = as.vector(beta_hat), theta_hat = theta_hat))
+}
+
+```
+
+To test this implementation we compare will compare the parameter estimates it to the estimates obtained with the `lmer()` function from the `lme4` library. First, we will look at the maximum likelihood (ML) estimates by specifying `REML = FALSE`.
+```{r test1,eval=FALSE}
+library(lme4)
+attach(sleepstudy)
+mod <- lmer(Reaction ~ 1 + Days + (1 + Days|Subject),
+            REML = FALSE, data = sleepstudy)
+mod_sum = summary(mod)
+mylmm_coef <- mylmm(sleepstudy$Reaction, sleepstudy$Days, 
+                    sleepstudy$Subject, REML = FALSE)
+cbind(matrix(c(mod_sum$coefficients[,1],diag(mod_sum$varcor$Subject),
+         mod_sum$varcor$Subject[2],mod_sum$sigma^2),nrow=6,
+       dimnames = list(c("beta_hat1","beta_hat2","tau_0^2",
+                         "tau_1^2","tau_01","sigma^2"),"lmer")),mylmm_coef)
+```
+The collected results from the `lmer()` function and our own implementation `mylmm()` is very similar. Next, we check the Restricted Maximum Likelihood (REML) estimates by specifying `REML = FALSE` in both function calls:
+```{r test2,eval=FALSE}
+mod_reml <- lmer(Reaction ~ 1 + Days + (1 + Days|Subject), 
+                 REML = TRUE, data = sleepstudy)
+mod_sum = summary(mod_reml)
+
+mylmm_coef <- mylmm(sleepstudy$Reaction, sleepstudy$Days, 
+                    sleepstudy$Subject, REML = TRUE)
+cbind(matrix(c(mod_sum$coefficients[,1],diag(mod_sum$varcor$Subject),
+         mod_sum$varcor$Subject[2],mod_sum$sigma^2),nrow=6,
+       dimnames = list(c("beta_hat1","beta_hat2","tau_0^2",
+                         "tau_1^2","tau_01","sigma^2"),"lmer")),mylmm_coef)
+detach(sleepstudy)
+```
+Again, the estimates are quite similar.
+
+Based on the estimates, we observe that the ML estimates tends to yield a smaller variance and standard error which is because of the induced bias from the $\boldsymbol{\beta}$s in the log-likelihood. The restricted log-likelihood is constructed by integrating out the betas from the log-likelihood. This is motivated by a empirical Bayesian perspective, where a constant prior distribution is assumed for the $\boldsymbol{\beta}$s. 
+
+## Generalized linear mixed model example
+
+We will now employ a generlized linear mixed model (GLMM) to describe the 2018 results of the Norwegian elite football league. Firstly, we load the data and observe the contents:
+```{r loadglmmdata}
 long <- read.csv("https://www.math.ntnu.no/emner/TMA4315/2020h/eliteserie.csv", colClasses = c("factor","factor","factor","numeric"))
 head(long)
 ```
 
+Here, each match is represented by pairs of rows; the first contains the number of goals scored by one team and if they were at their home stadium, and thus, the second row contains the number of goals the opponent scored and similarly if they were at home. In this model there are four variables; `attack`and `defence` which is a factor of 16 levels (16 teams), `home` a factor of two levels (yes/no), and lastly `goals` which is a numeric value of goals scored by the factor in `attack`. There is a total of 480 rows which means that there is a total of 240 matches. 
 
+To define GLMMs, we combine the notation of generalized linear models (GLMs) with the linear mixed models (LMMs) describe above. Consider the conditional density of a response $y_i$ given a linear predictor $\eta_i$ belonging to the exponential familiy. Moreover, the linear predictor is linked to the mean $\mu_i$ through a response function $h(\eta_i)$ and inversly the link function $\eta_i = g(\mu_i)$. Now, the linear predictor in GLMMs is extended to include random effects $\boldsymbol{\gamma}$ as
+$$
+ \eta_{ij} = \boldsymbol{x}_{ij}^T\boldsymbol{\beta} + \boldsymbol{u}_{ij}^T\boldsymbol{\gamma}_i, \enspace\enspace i=1,\dots,m, \enspace j=1,\dots,n_i,
+$$
+where $n_i$ is the number of measurements (subjects) in cluster (group) $i$, and $m$ is the number of clusters. We want to model the number of goals scored with the fixed effect of `home`, and random effect of subject `attack` and `defence` using a poisson likelihood. In other words, the grouping specifies the `attack` team $i$ with each match $j=1,\dots,n_i$ specifying which `defence` team it is playing against. Thus in the above equation, $\boldsymbol{\beta}$ is the fixed effects of the covariate `home` ($x_{ij}$), and $\gamma_{0i}$ is the random effects of `attack` (group) $i$ and $\gamma_{1j}$ the random effect of `defence` team. Note, that will only deal with the canonical link. Furthermore, we assume that the random effects are Gaussian distributed with mean zero with a positive definite covariance matrix $\boldsymbol{Q}=diag(\tau_0^2,\tau_1^2)$, i.e. $\boldsymbol{\gamma} = (\boldsymbol{\gamma}_0, \boldsymbol{\gamma}_1) \overset{\mathrm{i.i.d}}{\sim} \mathcal{N}(\boldsymbol{0},\boldsymbol{Q})$, where we assume that these the random effects are independent and identically distributed. The resulting random rate of the poisson likelihood is $\lambda_{ij} = \exp(\beta_0 + x_{ij}\beta_1 + \gamma_{0i} + \gamma_{1j})$. 
 
-```{r endup, include=FALSE}
-options(warn = defaultW)
+The poisson likelihood is commonly used in GLMMs for count responses, and in this setting the number of goals $y_{ij}$ are conditionally idependent for $i$ and $j$, but not marginally independent. 
+
+Next, we fit the model using the **R** package `glmTMB` as
+```{r fitglmm}
+library(glmmTMB)
+mod <- glmmTMB(goals ~ home + (1|attack) + (1|defence), family=poisson, data=long, REML=TRUE)
+```
+and observe the `summary()` output of the fit:
+```{r coefglmm}
+summary(mod)
+```
+Here, we there is a positive effect on the number of goals by playing at the home stadium which is reasonable since it is commonly known to be a favorable effect to winning (score more goals). The intercept has a *p*-value of 0.112 and looks to be insignificant. If a intercept is not to be included, given that `home` is a factor, the expected number of goals given `home=no` would be zero which is not going to be the case. In addition, if we try to fit a model without a intercept, the `glmmTMB()` function will split the factors of `home` in two fixed effects that are either on or off (on hot encoding). 
+
+Next, we are interested in observing the values of the random effects:
+```{r ranefglmmtmp, echo = FALSE}
+tmp1 = ranef(mod)$cond$attack$`(Intercept)`
+tmp2 = ranef(mod)$cond$defence$`(Intercept)`
+tmp3 = summary(mod)$coefficients$cond
+```
+
+```{r ranefglmm}
+randeff=ranef(mod)
+randeff
+```
+Here, we observe that the random effects of `attack` have an average value of `r mean(tmp1)`, and the `defence` has `r mean(tmp2)` which is to the expected value of zero defined in the model. In the summary output we also observe the variance of these effects. A high positive effect if `attack` means that the team is scoring a lot of goals, and a high negative effect of `defence` means they are good at defending and does not get scored on that much. 
+
+We are interested in calculating the exepectation and variance of the number of goals scored given a average attacking team that plays at is home field against another average defence team. Consider a `attack` team $k$ who is playing at home, $x_{kl}=1$ against `defence` $l$ and the random effects $\gamma_{0k}, \gamma_{1l}= \boldsymbol{0}$, and thus, the expected value and variance of goals is 
+$$
+\mathbb{E}[y_k|x_{kl}=1,(\gamma_{0l}, \gamma_{1k}) = \boldsymbol{0}] = \mathrm{Var}[y_k|x_{kl}=1,(\gamma_{0k}, \gamma_{1l}) = \boldsymbol{0}] = \exp\{\beta_0 + \beta_1\},
+$$
+which results in `r sum(exp(tmp3))`. And oppositely, for `attack` team $l$ not at home $x_{lk} = 0$ and `defence` team is $k$ we have
+$$
+\mathbb{E}[y_l|x_{lk}=0,(\gamma_{0l}, \gamma_{1k}) = \boldsymbol{0}] = \mathrm{Var}[y_k|x_{lk}=0,(\gamma_{0l}, \gamma_{1k}) = \boldsymbol{0}] = \exp\{\beta_0\},
+$$
+which gives the value `{r exp(tmp3[1,1]}`.
+
+Next, we are interested in finding the expected number of goals scored by a random `attack` team playing against a random `defence` team. Where one of which is playing at his home stadium. To do this we must look at the law of total probability and find the moment generating functions. For $\gamma_{0i}, \gamma_{1j} \sim \mathcal{N}(\boldsymbol{0},\mathrm{diag}(\tau_0^2,\tau_1^2)$, we have the moment generating function:
+
+$$
+M_{\gamma_{0i}, \gamma_{1j}}(t) = \exp\left(\frac{1}{2}\tau_0^2 t^2 + \frac{1}{2}\tau_1^2 t^2 \right).
+$$
+Thus, the expected number of goals by the law of total probability is
+$$
+\begin{aligned}
+\mathbb{E}[y_{ij}] &= \mathbb{E}\left[\mathbb{E}[y_{ij}|\gamma_{0i},\gamma_{1j}] \right] \\
+ & = \mathbb{E}\left[\exp(\beta_0 + x_{ij}\beta_1 + \gamma_{0i} + \gamma_{1j})\right] \\
+ & = \exp(\beta_0 + x_{ij}\beta_1)\cdot\mathbb{E}[\exp(\gamma_{0i} + \gamma_{1j})] \\
+ & = \exp(\beta_0 + x_{ij}\beta_1)\exp\left(\frac{1}{2}\tau_0^2 + \frac{1}{2}\tau_1^2 \right).
+\end{aligned}
+$$
+Furthermore, the variance is
+$$
+\begin{aligned}
+\mathrm{Var}[y_{ij}] & = \mathbb{E}\left[\mathrm{Var}[y_{ij}|\gamma_{0i},\gamma_{1j}]\right] \\
+ & = \mathbb{E}\left[\exp(\beta_0 + x_{ij}\beta_1 + \gamma_{0i} + \gamma_{1j})\right] + \mathrm{Var}\left[\exp(\beta_0 + x_{ij}\beta_1 + \gamma_{0i} + \gamma_{1j})\right] \\
+ & = \exp(\beta_0 + x_{ij}\beta_1)\exp\left(\frac{1}{2}\tau_0^2 + \frac{1}{2}\tau_1^2 \right) + \exp(2\beta_0 + 2x_{ij}\beta_1)\cdot\exp\left(\tau_0^2 + \tau_1^2 \right)\cdot\left(\exp(\tau_0^2+ \tau_1^2) - 1\right)
+\end{aligned}.
+$$
+The expected number of goals given `attack` is playing at home $x_{ij}=1$, $\mathbb{E}[y_{ij}|x_{ij}=1]$, is:
+
+```{r exp1,include=FALSE}
+coeff = summary(mod)$coefficients$cond
+ra_var = summary(mod)$varcor$cond
+exp(coeff[1,1] + coeff[2,1] + 1/2*ra_var$attack[1]^2 + 1/2*ra_var$defence[1]^2)
+```
+and oppositley if `attack` is playing away $x_{ij}=0$, $\mathbb{E}[y_{ij}|x_{ij}=0]$, we have: 
+
+```{r exp2,include=FALSE}
+exp(coeff[1,1] + 1/2*ra_var$attack[1]^2 + 1/2*ra_var$defence[1]^2)
+```
+
+The variances of are for $x_{ij}=1$:
+```{r var1,include=FALSE}
+exp(coeff[1,1] + coeff[2,1] + 1/2*ra_var$attack[1]^2 + 1/2*ra_var$defence[1]^2) +
+  exp(2*coeff[1,1] + 2*coeff[2,1]) * exp(ra_var$attack[1]^2 + ra_var$defence[1]^2)*(exp(ra_var$attack[1]^2 + ra_var$defence[1]^2) - 1)
+```
+and $x_{ij}=0$:
+```{r var2,include=FALSE}
+exp(coeff[1,1] + 1/2*ra_var$attack[1]^2 + 1/2*ra_var$defence[1]^2) +
+  exp(2*coeff[1,1]) * exp(ra_var$attack[1]^2 + ra_var$defence[1]^2)*(exp(ra_var$attack[1]^2 + ra_var$defence[1]^2) - 1)
+```
+Note, that we have used the estimated standard deviation $\tau_{0}$ =  `r ra_var$attack[1]` and $\tau_{1}$ = `r ra_var$defence[1]`.
+
+To test the significants we will perform a likelihood ratio test as: 
+$$
+H_0 : \enspace \tau_0^2 = 0 \enspace \mathrm{vs.} \enspace H_1: \tau_0^2>0,
+$$
+or 
+
+$$
+H_0 : \enspace \tau_1^2 = 0 \enspace \mathrm{vs.} \enspace H_1: \tau_1^2>0.
+$$
+We will deal with the LRT asymptotically being a mixture  $0.5\chi_0^2:0.5\chi_1^2$ mixture. The p-value of the LRT test for the random effect of `attack` is: 
+```{r lrtattack}
+mod_attack <- glmmTMB(goals ~ home + (1|attack), poisson, data=long, REML=TRUE)
+lrt_att = as.numeric(2 *(logLik(mod)-logLik(mod_attack)))
+p_att = 0.5*pchisq(lrt_att, df=1, lower.tail=F)
+p_att
+```
+The p-value of `defence` is:
+```{r lrtdefence}
+mod_defence <- glmmTMB(goals ~ home + (1|defence), poisson, data=long, REML=TRUE)
+lrt_def =as.numeric(2*(logLik(mod)-logLik(mod_defence)))
+p_def = 0.5*pchisq(lrt_def, df=1, lower.tail=F)
+p_def
+```
+And lasly `home` is:
+```{r lrthome}
+mod_home = glmmTMB(goals ~ (1|attack) + (1|defence) , poisson, data=long, REML=TRUE)
+lrt_home =  as.numeric(2*(logLik(mod)-logLik(mod_home)))
+p_def = pchisq(lrt_home, df=1, lower.tail=F)
+p_def
+```
+From these test we observe that the fixed effect of `home` is the only significant effect. However, this test can be conservatitve since $\tau = 0$ is at the boundary of the parameter space of $\gamma$. An alternative can be parametetric bootstrap to obtain p-values. Lastly, assuming that we are employ a significance level of $\alpha=0.05$ the critical value $z = \mathrm{inv-}\chi^2(0.95) = 3.84$.
+
+We want to create a function that rank the teams of the 2018 season based on the number of points they obtained. If a team wins they get 3 points, if they draw they get one point, and if they lose they get 0. Furthermore, if there is a draw in number of points the team is ranked by the number of goals scored. In the norweigan league there is more rules, but we only consider these. The function is implemented below and it is restrictive in that it takes advantage of the row order of matches in `long`.
+```{r rank}
+rankteams <- function(df){
+  teamnames = as.vector(unique(df$attack))
+  tabell = data.frame(rank = numeric(length(teamnames)), 
+                      points = numeric(length(teamnames)), 
+                      goals = numeric(length(teamnames)),
+                      played = numeric(length(teamnames)))
+  rownames(tabell) = teamnames
+  for (i  in seq(2,nrow(df),by=2)){
+    tabell[as.vector(df$attack[i]),]$goals = tabell[as.vector(df$attack[i]),]$goals + df$goals[i]
+    tabell[as.vector(df$attack[i-1]),]$goals = tabell[as.vector(df$attack[i-1]),]$goals + df$goals[i-1]
+    tabell[as.vector(df$attack[i]),]$played = tabell[as.vector(df$attack[i]),]$played +1
+    tabell[as.vector(df$attack[i-1]),]$played = tabell[as.vector(df$attack[i-1]),]$played +1
+    if (df$goals[i] > df$goals[i-1]){
+      tabell[as.vector(df$attack[i]),]$points = tabell[as.vector(df$attack[i]),]$points + 3
+    }else if (df$goals[i] < df$goals[i-1]){
+      tabell[as.vector(df$attack[i-1]),]$points = tabell[as.vector(df$attack[i-1]),]$points + 3
+    }else{
+      tabell[as.vector(df$attack[i-1]),]$points = tabell[as.vector(df$attack[i-1]),]$points + 1
+      tabell[as.vector(df$attack[i]),]$points = tabell[as.vector(df$attack[i]),]$points + 1
+    }
+  }
+  tabell = tabell[order( tabell[,2], tabell[,3],decreasing = c(TRUE,TRUE)),]
+  tabell$rank = seq(length(teamnames))
+  tabell
+}
+```
+
+To test the function we omit the `NA` values and find the rankings:
+```{r testrank}
+rankteams(na.omit(long))
+```
+
+Using the function created above, we want to simulate 1000 realization of rankings in the league. This is achieved by predicting the expected number of goals in all 240 matches or 480 rows during a season, and then run the ranking function for each realization. The code below performs this simulation and the top rows of these realizations of rankings is printed out. 
+```{r rankpred}
+lambdas = predict(mod,newdata = long,type = "response")
+rankings = matrix(data=NA, nrow=1000,ncol = 16)
+colnames(rankings) = unique(long$attack)
+tmp_long = long
+for (i in seq(1000)){
+  tmp = rpois(480,lambdas)
+  tmp_long$goals = tmp
+  tmp_rank = rankteams(tmp_long)
+  rankings[i,rownames(tmp_rank)] = tmp_rank$rank
+}
+head(rankings)
+```
+
+To summarize the realizations, we look at the probability of ranking which is obtained by the Monte Carlo estimates of the frequency of occurance of a rank for a specific team. The table below shows these probabilities. 
+```{r rankprobs}
+probs = matrix(NA, nrow = 16, ncol = 16)
+rownames(probs) = colnames(rankings)
+for (i in seq(16)){
+  for (j in seq(16)){
+    probs[i,j] = sum(rankings[,i]==j)/1000
+  }
+}
+probs
+```
+
+Using these probabilities, we can calculate the expected rank as
+$$
+\mathbb{E}[r_i] = \int r \cdot \mathrm{p}_i(r) \cdot \mathrm{d}r = \sum_{k=1}^{16}k\cdot \mathrm{p}_i(k),
+$$
+where index $i$ specifies the team. The code below calculates the respective expected ranks.
+```{r rankexp}
+exp_rank = matrix(NA,nrow = 16, ncol = 1)
+rownames(exp_rank) = rownames(probs)
+for (i in seq(16)){
+  exp_rank[i] = sum(probs[i,]*seq(16))
+}
+exp_rank
+```
+
+In addition, it could be interesting to compare the random effects `attack` and  `defence` with the expected rank.
+```{r comprank}
+comp_rank = cbind(randeff$cond$attack$`(Intercept)`,randeff$cond$defence$`(Intercept)`,exp_rank[row.names(randeff$cond$attack),])
+rownames(comp_rank) = rownames(randeff$cond$attack)
+colnames(comp_rank) = c("Attack", "Defence","E[rank]")
+comp_rank
+```
+As mentioned earlier a team is better than the rest if it has a larger `attack` and smaller `defence`, e.g. `Rosenborg` has this property and has the highest expected rank. We could also reduce the Monte Carlo error by simulating more realization of ranks.
+
+```{r endup, include=FALSE} 
+options(warn = defaultW) 
 ```
